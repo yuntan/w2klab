@@ -1,7 +1,6 @@
 import sys
+from io import StringIO
 import re
-import pickle
-from functools import reduce
 
 import numpy as np
 import scipy.constants as C
@@ -95,32 +94,28 @@ def parse_scf(case):
     return ef  # get last one value
 
 
-def plot(k, ene, k_ticks, k_labels):
-    YLIM = (-10, 10)  # eV
+def parse_spaghetti_ene(case, n_k):
+    MAX_I = 200
 
-    fig, ax = plt.subplots()
-    ax.axhline(0, c='k', ls='--', lw=1)
+    # n_k vector
+    k = None
+    # n_k x bands matrix
+    ene = np.zeros(n_k, MAX_I)
 
-    ax.scatter(k, ene, s=1, c='C0', marker='.')
+    n_band = 0
+    with open(f'{case}.spaghetti_ene') as f:
+        while True:
+            if not f.readline():  # skip:
+                break
+            with StringIO() as buf:
+                for i in range(n_k):
+                    buf.write(f.readline() + '\n')
+                a = np.loadtxt(buf.getvalues())
+                k = a[:, 3]
+                ene[:, i] = a[:, 4]
+            n_band += 1
 
-    ax.set_xlim((0, k[-1]))
-    ax.set_ylim(YLIM)
-
-    ax.set_xticks(k_ticks)
-    ax.set_xticklabels(k_labels)
-
-    ax.grid(True, axis='x')
-
-    ax.set_ylabel('Energy [eV]')
-
-    fig.tight_layout()
-
-    return fig
-
-
-def dump(obj, fname):
-    with open(fname, 'wb') as f:
-        pickle.dump(obj, f)
+    return k, ene[:, :n_band]
 
 
 def main():
@@ -156,12 +151,6 @@ def main():
     # flatten
     k = np.concatenate([k_path[i] * np.ones(n_ene[i]) for i in range(n_k)])
     ene = np.concatenate([ene[i, :n_ene[i]] for i in range(n_k)])
-
-    fig = plot(k, ene, k_ticks, k_labels)
-    fig.savefig('spaghetti.pdf')
-    fig.savefig('spaghetti.png')
-    dump(fig, 'spaghetti.pkl')
-    print(f"written spaghetti.pdf, spaghetti.png, spaghetti.pkl")
 
     np.savez_compressed('spaghetti.npz',
                         x=k, y=ene, x_ticks=k_ticks, x_labels=k_labels)
