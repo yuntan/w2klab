@@ -1,0 +1,21 @@
+#!/bin/bash
+set -eu
+
+PY3=~/anaconda3/bin/python3
+W2KTOOLS=$(cd $(dirname $0); pwd)/..
+
+if [[ $# -eq 0 ]]; then
+  echo "w2ktools v0.1"
+  exit 0
+fi
+
+subcommand=$1
+shift
+case $subcommand in
+new)
+  cp -a $W2KTOOLS/new $1
+  ;;
+*)
+  $PY3 $W2KTOOLS/scripts/$subcommand.py $@
+  ;;
+esac
