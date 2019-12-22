@@ -54,7 +54,7 @@ W2T=~/w2ktools/bin/w2t
 set -eu
 trap 'echo ERROR: $0:$LINENO exit $?' ERR INT
 
-echo "==> for case: $case"
+echo "==> WIEN2k for case: $case"
 
 # ディレクトリ名とCASEを合わせる
 mkdir $case &> /dev/null || true
@@ -103,4 +103,4 @@ echo -n "cp "; cp -v $case.energy $case.energy_band
 # input: case.struct, case.klist_band, case.scf1, case.energy_band
 $W2T spaghetti $case
 
-echo "--> DONE (for case: $case)"
+echo "--> DONE (WIEN2k for case: $case)"

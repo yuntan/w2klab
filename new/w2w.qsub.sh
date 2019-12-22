@@ -30,7 +30,7 @@ W2T=~/w2ktools/bin/w2t
 set -eu
 trap 'echo ERROR: $0:$LINENO exit $?' ERR INT
 
-echo "==> for case: $case"
+echo "==> Wien2Wannier for case: $case"
 source "$case.w2w"
 cd $w2k_case
 $W2K/prepare_w2wdir $case
@@ -72,5 +72,5 @@ $W2K/x w2w
 echo "--> compute MLWF (wannier90)"
 $W2K/x wannier90
 
-echo "--> DONE (for case: $case)"
+echo "--> DONE (Wien2Wannier for case: $case)"
 # echo "$z $(~/anaconda3/bin/python3 ../get_hopping.py $case)" >> ../hoppings.dat
