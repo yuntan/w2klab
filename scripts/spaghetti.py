@@ -3,9 +3,7 @@ from io import StringIO
 import re
 
 import numpy as np
-import scipy.constants as C
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 
 mpl.rcParams['figure.titlesize'] = 'xx-large'
 mpl.rcParams['legend.fontsize'] = 'large'
@@ -29,9 +27,8 @@ def parse(fmt, s):
     ))
 
 
+FMT_A = '{:f} {:f} {:f} {:f} {:f} {:f}'
 def parse_struct(case):
-    FMT_A = '{:f} {:f} {:f} {:f} {:f} {:f}'
-
     with open(f"{case}.struct") as f:
         for _ in range(3):
             f.readline()  # skip
@@ -58,11 +55,10 @@ def parse_klist_band(case):
     return n_k, k_ticks, k_labels
 
 
+MAX_N_E = 200
+FMT_K = '{:E}{:E}{:E}{:s}{:d}{:d}{:f}'
+FMT_E = '{:d}{:E}'
 def parse_energy(case, n_k, a):
-    MAX_N_E = 200
-    FMT_K = '{:E}{:E}{:E}{:s}{:d}{:d}{:f}'
-    FMT_E = '{:d}{:E}'
-
     k = np.zeros((n_k, 3))
     ene = np.zeros((n_k, MAX_N_E))
     n_ene = np.zeros(n_k, int)
@@ -84,9 +80,8 @@ def parse_energy(case, n_k, a):
     return k, ene, n_ene
 
 
+RE_FERMI = re.compile(r'^:FER')
 def parse_scf(case):
-    RE_FERMI = re.compile(r'^:FER')
-
     with open(f'{case}.scf') as f:
         for line in f:
             if RE_FERMI.match(line):
@@ -94,13 +89,12 @@ def parse_scf(case):
     return ef  # get last one value
 
 
+MAX_I = 200
 def parse_spaghetti_ene(case, n_k):
-    MAX_I = 200
-
     # n_k vector
     k = None
-    # n_k x bands matrix
-    ene = np.zeros((n_k, MAX_I))
+    # n_bands x n_k matrix
+    ene = np.zeros((MAX_I, n_k))
 
     n_band = 0
     with open(f'{case}.spaghetti_ene') as f:
@@ -110,19 +104,42 @@ def parse_spaghetti_ene(case, n_k):
             with StringIO() as buf:
                 for i in range(n_k):
                     buf.write(f.readline() + '\n')
-                lines = buf.getvalue()
-            with StringIO(lines) as buf:
+                buf.seek(0)
                 a = np.loadtxt(buf)
-            k = a[:, 3]
-            ene[:, n_band] = a[:, 4]
+            k, ene[n_band, :] = a[:, 3], a[:, 4]
             n_band += 1
 
-    return k, ene[:, :n_band]
+    return k, ene[:n_band, :]
 
 
-def main():
-    case = sys.argv[1]
+N_ORB = 11
+PAT = re.compile(r'NAT=\s*(\d+)')
+def parse_qtl(case, n_bands, n_k):
+    with open(f'{case}.qtl') as f:
+        for _ in range(3):
+            f.readline()  # skip
 
+        n_atoms = int(re.search(PAT, f.readline())[1])
+        chg = np.zeros((n_atoms, N_ORB, n_bands, n_k))
+
+        for _ in range(n_atoms):
+            f.readline()  # skip
+        for i_band in range(n_bands):
+            f.readline()  # skip
+            with StringIO() as buf:
+                for _ in range(n_k):
+                    for j in range(n_atoms):
+                        buf.write(f.readline() + '\n')
+                    f.readline()  # skip
+                buf.seek(0)
+                a = np.loadtxt(buf)
+            a = a[:, 2:].reshape((n_k, n_atoms, N_ORB)).transpose((1, 2, 0))
+            chg[:, :, i_band, :] = a
+
+    return chg
+
+
+def main(case):
     # a = parse_struct(case)  # lattice const.
     n_k, i_ticks, k_labels = parse_klist_band(case)
 
@@ -142,8 +159,9 @@ def main():
     # ene *= ry
 
     # k: n_k vector
-    # ene: n_k x n_band matrix
+    # ene: n_band x n_k matrix
     k, ene = parse_spaghetti_ene(case, n_k)
+    n_bands = ene.shape[0]
 
     # calc k-path
     # k_path = np.zeros(n_k)
@@ -155,14 +173,17 @@ def main():
     # k_ticks = k_path[i_ticks]
     k_ticks = k[i_ticks]
 
+    chg = parse_qtl(case, n_bands, n_k)
+
     # flatten
     # k = np.concatenate([k_path[i] * np.ones(n_ene[i]) for i in range(n_k)])
     # ene = np.concatenate([ene[i, :n_ene[i]] for i in range(n_k)])
 
     np.savez_compressed('spaghetti.npz',
-                        x=k, y=ene, x_ticks=k_ticks, x_labels=k_labels)
+                        k=k, ene=ene, chg=chg,
+                        k_ticks=k_ticks, k_labels=k_labels)
     print(f"written data file: spaghetti.npz")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])
