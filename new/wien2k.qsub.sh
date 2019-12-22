@@ -93,14 +93,19 @@ $W2T gen_klist_band $case $pearson $bz_syms $bz_div_n
 # output: case.scf1, case.energy
 $W2K/x lapw1 -band
 
-$W2K/x spaghetti || true # generate case.insp
-sed -i $case.insp -e 's/0\.xxxx/'$fe'/'
-$W2K/x spaghetti # generate case.spaghetti_ene
-
+ef=$(cat $case.scf | grep -E '^:FER' | tail -n1 | perl -pe 's/^[^=]+=\s*//')
 # backup for restarting spaghetti
 echo -n "cp "; cp -v $case.energy $case.energy_band
 
-# input: case.struct, case.klist_band, case.scf1, case.energy_band
+# update charges
+$W2K/x lapw2 -qtl -band
+
+$W2K/x spaghetti || true # generate case.insp
+sed -i $case.insp -e 's/0\.xxxx/'$ef'/'
+$W2K/x spaghetti # generate case.spaghetti_ene
+
+# input: case.struct, case.klist_band, case.scf1, case.energy_band, case.qtl
+# case.spaghetti_ene
 $W2T spaghetti $case
 
 echo "--> DONE (WIEN2k for case: $case)"
