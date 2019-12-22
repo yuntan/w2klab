@@ -28,6 +28,8 @@ def parse(fmt, s):
 
 
 FMT_A = '{:f} {:f} {:f} {:f} {:f} {:f}'
+RE_ATOM = re.compile(r'^ATOM\s+')
+RE_ATOM_X = re.compile(r'^([A-Z][a-z]?)\s+')
 def parse_struct(case):
     with open(f"{case}.struct") as f:
         for _ in range(3):
@@ -36,7 +38,18 @@ def parse_struct(case):
         # case.outputirに変換行列が書いてある
         a, b, c, _, _, _ = parse(FMT_A, f.readline())
 
-    return np.array([a, b, c])
+    atoms = []
+    with open(f'{case}.struct') as f:
+        b = False
+        for line in f:
+            if RE_ATOM.match(line):
+                b = True
+            m = RE_ATOM_X.match(line)
+            if b and m:
+                atoms += [m[1]]
+                b = False
+
+    return np.array([a, b, c]), atoms
 
 
 def parse_klist_band(case):
@@ -113,14 +126,27 @@ def parse_spaghetti_ene(case, n_k):
 
 
 N_ORB = 11
-PAT = re.compile(r'NAT=\s*(\d+)')
-def parse_qtl(case, n_bands, n_k):
+RE_NAT = re.compile(r'NAT=\s*(\d+)')
+LABELS_ORB = ['total', 's', 'p', 'pz', 'px+py',
+              'd', 'dz2', 'dxy', 'dx2y2', 'dxz+dyz', 'f']
+def parse_qtl(case, atoms, n_bands, n_k):
     with open(f'{case}.qtl') as f:
         for _ in range(3):
             f.readline()  # skip
 
-        n_atoms = int(re.search(PAT, f.readline())[1])
-        chg = np.zeros((n_atoms, N_ORB, n_bands, n_k))
+        n_atoms = int(re.search(RE_NAT, f.readline())[1])
+        if n_atoms != len(atoms):
+            print(f"ERROR invalid number of atoms: {n_atoms} != len({atoms})")
+            os.exit(1)
+
+        dtype = [
+            (atom, [
+                (orb, float)
+                for orb in LABELS_ORB
+            ])
+            for atom in atoms
+        ]
+        chg = np.zeros((n_atoms, N_ORB, n_bands, n_k), dtype=dtype)
 
         for _ in range(n_atoms):
             f.readline()  # skip
@@ -140,9 +166,10 @@ def parse_qtl(case, n_bands, n_k):
 
 
 def main(case):
-    # a = parse_struct(case)  # lattice const.
-    n_k, i_ticks, k_labels = parse_klist_band(case)
+    _, atoms = parse_struct(case)  # lattice const.
+    print(f"reading {len(atoms)} atoms")
 
+    n_k, i_ticks, k_labels = parse_klist_band(case)
     print(f"reading {n_k} kpoints")
 
     # k: n_k x 3 matrix
@@ -173,7 +200,7 @@ def main(case):
     # k_ticks = k_path[i_ticks]
     k_ticks = k[i_ticks]
 
-    chg = parse_qtl(case, n_bands, n_k)
+    chg = parse_qtl(case, atoms, n_bands, n_k)
 
     # flatten
     # k = np.concatenate([k_path[i] * np.ones(n_ene[i]) for i in range(n_k)])
