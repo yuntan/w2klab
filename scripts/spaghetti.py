@@ -1,3 +1,5 @@
+# input: case.struct, case.klist_band, case.spaghetti_ene, case.qtl
+# output: spaghetti.npz
 import sys
 from io import StringIO
 import re
@@ -10,6 +12,30 @@ mpl.rcParams['legend.fontsize'] = 'large'
 mpl.rcParams['axes.labelsize'] = 'x-large'
 mpl.rcParams['xtick.labelsize'] = 'large'
 mpl.rcParams['ytick.labelsize'] = 'large'
+
+
+# const for parse_struct
+FMT_A = '{:f} {:f} {:f} {:f} {:f} {:f}'
+RE_ATOM = re.compile(r'^ATOM\s+')
+RE_ATOM_X = re.compile(r'^([A-Z][a-z]?)\s+')
+
+# const for parse_energy
+MAX_N_E = 200
+FMT_K = '{:E}{:E}{:E}{:s}{:d}{:d}{:f}'
+FMT_E = '{:d}{:E}'
+
+# const for parse_scf
+RE_FERMI = re.compile(r'^:FER')
+
+# const for parse_spaghetti_ene
+RE_BANDINDEX = re.compile(r'^\s*bandindex:')
+
+# const for parse_qtl
+N_ORBS = 11
+RE_NAT = re.compile(r'NAT=\s*(\d+)')
+RE_BAND = re.compile(r'^\s*BAND')
+ORBS = ['total', 's', 'p', 'pz', 'px+py',
+        'd', 'dz2', 'dxy', 'dx2y2', 'dxz+dyz', 'f']
 
 
 def parse(fmt, s):
@@ -27,9 +53,6 @@ def parse(fmt, s):
     ))
 
 
-FMT_A = '{:f} {:f} {:f} {:f} {:f} {:f}'
-RE_ATOM = re.compile(r'^ATOM\s+')
-RE_ATOM_X = re.compile(r'^([A-Z][a-z]?)\s+')
 def parse_struct(case):
     with open(f"{case}.struct") as f:
         for _ in range(3):
@@ -68,9 +91,6 @@ def parse_klist_band(case):
     return n_k, k_ticks, k_labels
 
 
-MAX_N_E = 200
-FMT_K = '{:E}{:E}{:E}{:s}{:d}{:d}{:f}'
-FMT_E = '{:d}{:E}'
 def parse_energy(case, n_k, a):
     k = np.zeros((n_k, 3))
     ene = np.zeros((n_k, MAX_N_E))
@@ -93,7 +113,6 @@ def parse_energy(case, n_k, a):
     return k, ene, n_ene
 
 
-RE_FERMI = re.compile(r'^:FER')
 def parse_scf(case):
     with open(f'{case}.scf') as f:
         for line in f:
@@ -102,67 +121,60 @@ def parse_scf(case):
     return ef  # get last one value
 
 
-MAX_I = 200
 def parse_spaghetti_ene(case, n_k):
+    with open(f'{case}.spaghetti_ene') as f:
+        n_bands = sum(1 for line in f if RE_BANDINDEX.match(line))
+
     # n_k vector
     k = None
     # n_bands x n_k matrix
-    ene = np.zeros((MAX_I, n_k))
+    ene = np.zeros((n_bands, n_k))
 
-    n_band = 0
     with open(f'{case}.spaghetti_ene') as f:
-        while True:
-            if not f.readline():  # skip:
-                break
+        for i_band in range(n_bands):
+            f.readline()  # skip
             with StringIO() as buf:
                 for i in range(n_k):
                     buf.write(f.readline() + '\n')
                 buf.seek(0)
                 a = np.loadtxt(buf)
-            k, ene[n_band, :] = a[:, 3], a[:, 4]
-            n_band += 1
+            k, ene[i_band, :] = a[:, 3], a[:, 4]
 
-    return k, ene[:n_band, :]
+    return k, ene
 
 
-N_ORB = 11
-RE_NAT = re.compile(r'NAT=\s*(\d+)')
-LABELS_ORB = ['total', 's', 'p', 'pz', 'px+py',
-              'd', 'dz2', 'dxy', 'dx2y2', 'dxz+dyz', 'f']
-def parse_qtl(case, atoms, n_bands, n_k):
+def parse_qtl(case, atoms, n_k):
+    n_atoms = len(atoms)
+
     with open(f'{case}.qtl') as f:
-        for _ in range(3):
-            f.readline()  # skip
+        n_bands = sum(1 for line in f if RE_BAND.match(line))
 
-        n_atoms = int(re.search(RE_NAT, f.readline())[1])
-        if n_atoms != len(atoms):
-            print(f"ERROR invalid number of atoms: {n_atoms} != len({atoms})")
-            os.exit(1)
+    ene = np.zeros((n_bands, n_k))
+    dt = np.dtype([(atom, [(orb, float) for orb in ORBS]) for atom in atoms])
+    chg = np.zeros((n_bands, n_k), dtype=dt)
 
-        dtype = [
-            (atom, [
-                (orb, float)
-                for orb in LABELS_ORB
-            ])
-            for atom in atoms
-        ]
-        chg = np.zeros((n_atoms, N_ORB, n_bands, n_k), dtype=dtype)
+    with open(f'{case}.qtl') as f:
+        [f.readline() for _ in range(4 + n_atoms)]  # skip
 
-        for _ in range(n_atoms):
-            f.readline()  # skip
         for i_band in range(n_bands):
             f.readline()  # skip
+
             with StringIO() as buf:
                 for _ in range(n_k):
-                    for j in range(n_atoms):
+                    for _ in range(n_atoms):
                         buf.write(f.readline() + '\n')
                     f.readline()  # skip
                 buf.seek(0)
                 a = np.loadtxt(buf)
-            a = a[:, 2:].reshape((n_k, n_atoms, N_ORB)).transpose((1, 2, 0))
-            chg[:, :, i_band, :] = a
 
-    return chg
+            ene[i_band, :] = a[::n_atoms, 0]
+            for i_atom in range(n_atoms):
+                for i_orb in range(N_ORBS):
+                    atom = atoms[i_atom]
+                    orb = ORBS[i_orb]
+                    chg[atom][orb][i_band, :] = a[i_atom::n_atoms, i_orb + 2]
+
+    return ene, chg
 
 
 def main(case):
@@ -188,7 +200,8 @@ def main(case):
     # k: n_k vector
     # ene: n_band x n_k matrix
     k, ene = parse_spaghetti_ene(case, n_k)
-    n_bands = ene.shape[0]
+    k_ticks = k[i_ticks]
+    print(f"reading {ene.shape[0]} bands")
 
     # calc k-path
     # k_path = np.zeros(n_k)
@@ -198,9 +211,8 @@ def main(case):
     #     k_path[i] = k_path[i - 1] + np.linalg.norm(k_to - k_from)
     #     k_from = k_to
     # k_ticks = k_path[i_ticks]
-    k_ticks = k[i_ticks]
 
-    chg = parse_qtl(case, atoms, n_bands, n_k)
+    _, chg = parse_qtl(case, atoms, n_k)
 
     # flatten
     # k = np.concatenate([k_path[i] * np.ones(n_ene[i]) for i in range(n_k)])
