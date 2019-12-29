@@ -12,7 +12,7 @@
 # Mail at beginning/end/on suspension
 #$ -m bes
 
-test $# -eq 1 || exit 1
+[[ $# -ne 1 ]] && exit 1
 case=$1
 
 # BoltzTraP

@@ -12,7 +12,7 @@
 # mail at beginning/end/on suspension
 #$ -m bes
 
-test $# -eq 1 || exit 1
+[[ $# -ne 1 ]] && exit 1
 case=$1
 
 # RUN FLAGS
@@ -20,8 +20,8 @@ case=$1
 run_init=true
 run_scf=true
 run_band=true
-run_so_scf=true
-run_so_band=true
+run_so_scf=false
+run_so_band=false
 
 # WIEN2k
 # ======
